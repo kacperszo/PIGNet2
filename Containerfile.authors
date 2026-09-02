@@ -1,0 +1,53 @@
+# PIGNet2 as the authors pinned it, to settle one question: is the van der Waals discrepancy
+# caused by torch_geometric?
+#
+# Everything else has been ruled out — checkpoint, model class, RDKit version, protonation,
+# and the age of the golden file. What is left is that `GatedGAT` subclasses PyG's
+# `MessagePassing`, which was rebuilt between 2.0 and 2.3, while the vdW term is the only
+# energy that reads the node embeddings those convolutions produce.
+#
+# Confirmed: with torch_geometric 2.0.3 the vdW term is -2.074, exactly the golden value, where
+# 2.3.1 gives -3.518. PyG's MessagePassing was rebuilt between those releases and vdW is the
+# only energy reading the node embeddings its convolutions produce.
+#
+# torch is 2.1.2 rather than the authors' 1.9.1, and only torch_geometric is pinned to their
+# version. The experiment above isolates PyG as the cause, and torch 1.9.1 would force Python
+# 3.9 — for which dimorphite-dl publishes nothing, leaving protonation off and the
+# hydrogen-bond term at -0.743 instead of the golden's -1.021. Keeping torch 2.1.2 lets the
+# vdW fix and the protonation fix hold at the same time, which neither older stack allows.
+FROM docker.io/mambaorg/micromamba:1.5.8
+
+USER root
+ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+        python=3.10 pymol-open-source openbabel libstdcxx-ng reduce \
+    && micromamba clean --all --yes
+ENV PATH=/opt/conda/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/conda/lib
+
+RUN pip install --no-cache-dir torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+        torch-scatter torch-sparse \
+        -f https://data.pyg.org/whl/torch-2.1.2+cpu.html \
+    && pip install --no-cache-dir "torch-geometric==2.0.3"
+
+RUN pip install --no-cache-dir \
+    "rdkit-pypi==2022.3.5" \
+    "dimorphite-dl==1.2.5" \
+    "biopython==1.79" \
+    "hydra-core==1.2.0" \
+    "omegaconf==2.2.2" \
+    "numpy==1.22.4" \
+    "scipy==1.7.2" \
+    "pandas==1.4.3" \
+    "scikit_learn==1.1.2" \
+    "tqdm==4.64.0"
+
+ENV PYTHONPATH=/work:/work/src:/work/src/exe:/work/dataset/preprocess
+
+RUN python -c "import torch, torch_geometric, torch_scatter, rdkit, pymol; \
+print('env ok', torch.__version__, torch_geometric.__version__)"
+
+WORKDIR /work
+COPY . /work
