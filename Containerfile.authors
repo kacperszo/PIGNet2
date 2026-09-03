@@ -16,9 +16,13 @@
 # divergence is also complex-dependent (1a30 -2.865 vs -5.260, 1bzc -7.709 vs -7.697), which
 # looks like perception on ambiguous molecules rather than changed arithmetic.
 #
-# NOTE: this file no longer builds. data.pyg.org has stopped serving torch-scatter wheels for
-# torch 2.1.2, pip falls back to the sdist, and that build needs torch inside pip's isolated
-# environment. The pignet2-ref image still exists locally; the recipe does not reproduce it.
+# NOTE on rebuilding: if the torch-scatter step fails with `ModuleNotFoundError: No module
+# named 'torch'`, check that data.pyg.org resolves before believing the wheels are gone. pip
+# silently ignores an unreachable --find-links and falls back to the sdist, whose setup.py
+# imports torch — unavailable in pip's isolated build env. On 2026-09-03 that host failed DNS
+# resolution here while PyPI was fine, and the symptom was indistinguishable from a removed
+# wheel. Also note the installed extension is torch-scatter 2.1.2+pt21cpu: CPU-only, so this
+# image cannot run on GPU regardless.
 #
 # torch is 2.1.2 rather than the authors' 1.9.1, and only torch_geometric is pinned to their
 # version. The experiment above isolates PyG as the cause, and torch 1.9.1 would force Python
