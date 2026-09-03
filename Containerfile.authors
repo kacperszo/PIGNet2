@@ -6,9 +6,19 @@
 # `MessagePassing`, which was rebuilt between 2.0 and 2.3, while the vdW term is the only
 # energy that reads the node embeddings those convolutions produce.
 #
-# Confirmed: with torch_geometric 2.0.3 the vdW term is -2.074, exactly the golden value, where
-# 2.3.1 gives -3.518. PyG's MessagePassing was rebuilt between those releases and vdW is the
-# only energy reading the node embeddings its convolutions produce.
+# The conclusion recorded here was WRONG and is kept only so the correction travels with it.
+# This image does reproduce the golden vdW of -2.074 where the other gives -3.518, but the two
+# images differ in RDKit (2022.3.5 vs 2023.9.6), numpy and scipy as well as torch_geometric, so
+# the comparison never isolated PyG. `probe_gatedgat.py` since ran GatedGAT under both PyG
+# versions with fixed weights: attention logits, softmax, forward and the authors' own dense
+# `compare()` all agree exactly. RDKit is the remaining candidate — node features depend on its
+# bond and hybridisation perception, and vdW is the only energy reading node embeddings. The
+# divergence is also complex-dependent (1a30 -2.865 vs -5.260, 1bzc -7.709 vs -7.697), which
+# looks like perception on ambiguous molecules rather than changed arithmetic.
+#
+# NOTE: this file no longer builds. data.pyg.org has stopped serving torch-scatter wheels for
+# torch 2.1.2, pip falls back to the sdist, and that build needs torch inside pip's isolated
+# environment. The pignet2-ref image still exists locally; the recipe does not reproduce it.
 #
 # torch is 2.1.2 rather than the authors' 1.9.1, and only torch_geometric is pinned to their
 # version. The experiment above isolates PyG as the cause, and torch 1.9.1 would force Python

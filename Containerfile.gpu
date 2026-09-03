@@ -1,0 +1,68 @@
+# PIGNet2 on the GPU, numerically identical to the `reference` tier.
+#
+# Derived from `Containerfile.authors`, not from `Containerfile`. That matters: the reference
+# number (R=0.759 on the CASF-2016 core set, exact golden-file reproduction) comes from
+# **torch_geometric 2.0.3**. PyG rebuilt `MessagePassing` between 2.0 and 2.3, and since
+# `GatedGAT` subclasses it while the van der Waals term is the only energy reading the node
+# embeddings those convolutions produce, 2.3.1 moves vdW from the golden -2.074 to -3.518 and
+# drops the model to the heavy-atom baseline. So the pin is load-bearing and travels here
+# unchanged; only the torch build changes.
+#
+# The single difference from the reference image: torch and the PyG companion wheels come from
+# the cu121 index instead of the cpu one. torch 2.1.2+cu121 has native sm_86 kernels and JITs
+# for sm_89, covering both the cluster A4000 and the local Ada card.
+#
+# This image must reproduce the reference predictions before it is used for anything. It is
+# not a modernisation — see `Containerfile` for that, and note it is the broken one.
+FROM docker.io/mambaorg/micromamba:1.5.8
+
+USER root
+ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+        python=3.10 pymol-open-source openbabel libstdcxx-ng reduce \
+    && micromamba clean --all --yes
+ENV PATH=/opt/conda/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/conda/lib
+
+# -f rather than --index-url: --index-url confines pip to that host, and the nvidia runtime
+# packages torch depends on are not published there.
+RUN pip install --no-cache-dir torch==2.1.2 \
+        -f https://download.pytorch.org/whl/cu121/torch_stable.html
+
+# Two find-links, because PyG keys its wheel index by the torch *minor* version while the CPU
+# tier happened to match on the patch one. Without a matching wheel pip falls back to the
+# sdist, whose setup.py imports torch — unavailable inside pip's isolated build env — and the
+# build dies with a bare ModuleNotFoundError that looks nothing like the real cause.
+RUN pip install --no-cache-dir \
+        torch-scatter torch-sparse \
+        -f https://data.pyg.org/whl/torch-2.1.0+cu121.html \
+        -f https://data.pyg.org/whl/torch-2.1.2+cu121.html \
+    && pip install --no-cache-dir "torch-geometric==2.0.3"
+
+# A source-built torch-scatter without nvcc present compiles CPU-only kernels and still
+# imports cleanly, so the failure would surface as silently wrong numbers on GPU rather than
+# an error. Fail the build here instead.
+RUN python -c "import glob, os, torch_scatter, torch_sparse; \
+d = os.path.dirname(torch_scatter.__file__); \
+assert glob.glob(os.path.join(d, '_scatter_cuda*')), 'torch_scatter has no CUDA extension'; \
+print('torch_scatter CUDA extension present')"
+
+RUN pip install --no-cache-dir \
+    "rdkit-pypi==2022.3.5" \
+    "dimorphite-dl==1.2.5" \
+    "biopython==1.79" \
+    "hydra-core==1.2.0" \
+    "omegaconf==2.2.2" \
+    "numpy==1.22.4" \
+    "scipy==1.7.2" \
+    "pandas==1.4.3" \
+    "scikit_learn==1.1.2" \
+    "tqdm==4.64.0"
+
+ENV PYTHONPATH=/work:/work/src:/work/src/exe:/work/dataset/preprocess
+
+RUN python -c "import torch, torch_geometric, torch_scatter, rdkit, pymol; \
+print('env ok', torch.__version__, torch_geometric.__version__, 'cuda', torch.version.cuda)"
+
+WORKDIR /work
+COPY . /work
