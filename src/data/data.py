@@ -268,8 +268,13 @@ def complex_to_data(
         mol_target = Chem.RemoveAllHs(mol_target)
 
     # Combine the values.
-    assert set(ligand.keys) == set(target.keys)
-    for attr in ligand.keys:
+    # torch_geometric 2.4 turned `Data.keys` from a property into a method, so reading it
+    # directly gives a bound method on anything newer and `set()` raises. Both spellings are
+    # accepted here so one source tree serves the pinned tier and a current one.
+    ligand_keys = ligand.keys() if callable(ligand.keys) else ligand.keys
+    target_keys = target.keys() if callable(target.keys) else target.keys
+    assert set(ligand_keys) == set(target_keys)
+    for attr in ligand_keys:
         ligand_value = ligand[attr]
         target_value = target[attr]
 

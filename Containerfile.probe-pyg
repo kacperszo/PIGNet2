@@ -1,0 +1,15 @@
+# One variable, changed on top of the image that reproduces.
+#
+# `pignet2-ref` matches the authors' committed case1.txt exactly; `pignet2` gets the vdW term
+# wrong (-3.518 against -2.074) and every other energy right. The two images differ in both
+# torch_geometric (2.0.3 vs 2.3.1) and rdkit (2025.09.6 vs 2023.09.6), so neither can be
+# blamed from that comparison alone — and the earlier attempt to settle it was run in an
+# image whose numpy 2 broke torch's array bridge, so it never produced a number at all.
+#
+# This changes torch_geometric and nothing else. Whatever case1 does here is the answer.
+FROM localhost/pignet2-ref:latest
+
+ARG PYG_VERSION=2.3.1
+RUN pip install --no-cache-dir "torch_geometric==${PYG_VERSION}"
+RUN python -c "import torch_geometric, rdkit, numpy; \
+print('probe env', torch_geometric.__version__, rdkit.__version__, numpy.__version__)"

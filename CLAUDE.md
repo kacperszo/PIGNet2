@@ -20,9 +20,31 @@ hydrogen-bond, metal and hydrophobic terms take their minima from *scalar* learn
 coefficients. The Morse vdW term is the **only** energy that reads the node embeddings the
 convolutions produce — so four terms can match exactly while the features are wrong.
 
-**torch_geometric had to be pinned to 2.0.3.** With 2.3.1 the vdW term was -3.518 against the
-golden's -2.074, and nothing else moved. `GatedGAT` subclasses PyG's `MessagePassing`, which
-was rebuilt between those releases.
+**The vdW term was wrong on anything newer than torch_geometric 2.0.3 — and the cause was a
+one-line bug in this repo, not the environment.** With 2.3.1 the term read -3.518 against the
+golden's -2.074 while the other four energies stayed exact.
+
+`InteractionNet.__init__` called `super().__init__(**kwargs)` without passing `aggr`, then set
+`self.aggr = "max"` afterwards. Until PyG 2.1 `aggregate()` read `self.aggr` when it ran, so
+that worked; 2.1 moved aggregation into an `aggr_module` built during `__init__`, and the later
+assignment stopped reaching it. The layer went on reporting `self.aggr == "max"` while summing.
+Three messages of 1, 5, 3 aggregate to 5 on 2.0.3 and to 9 on 2.3.1.
+
+The Morse vdW term is the only energy that reads node embeddings, which is why the other four
+matched exactly and the fault looked like it had to be environmental. It was blamed on PyG's
+MessagePassing rewrite, then — after a unit-level probe showed `GatedGAT` agreed across
+versions — on rdkit. `GatedGAT` does agree; it was never the layer at fault, and the probe
+never touched `InteractionNet`.
+
+Passing `aggr` to `super()` fixes it, spelled `"add"` rather than `"sum"` because 2.0.3 asserts
+the name is one of add/mean/max/None while later releases take "add" as the alias. Every tier
+now reproduces `case1.txt`, and **the PyG pin is gone**: `Containerfile.torch` runs torch 2.5.1
+with an unpinned torch_geometric and no torch-scatter at all.
+
+The experiment that settled it is worth keeping as a pattern: build the image that *works*,
+change exactly one package on top of it, and rerun. The two earlier attempts compared images
+differing in four packages at once, and the one that would have isolated it had a numpy 2
+against a torch built for numpy 1, so it never produced a number.
 
 **dimorphite-dl had to be shimmed.** The PyPI package was rewritten and no longer exposes the
 `DimorphiteDL` class `protonate.py` calls, so protonation silently did not happen and the
@@ -88,8 +110,14 @@ the rewrite.
   `src/exe/` without the import following. PYTHONPATH covers it.
 - **Python 3.9, which their README pins, no longer works**: dimorphite-dl publishes nothing
   for it. The image uses 3.10.
-- **torch_geometric must be < 2.4.** 2.4 turned `Data.keys` from a property into a method, and
-  `data.py:271` does `set(ligand.keys)`, which then raises "'method' object is not iterable".
+- **`Data.keys` became a method in torch_geometric 2.4.** `data.py` now accepts both
+  spellings, so there is no upper bound on PyG any more. The same file also falls back from
+  `torch_scatter.scatter` to `torch_geometric.utils.scatter` — note that call passes `dim=-1`
+  explicitly, because the two disagree on the default and `energies_pairs` is
+  (energy_types, pairs).
+- **`aggr` must reach `MessagePassing.__init__`.** Setting `self.aggr` afterwards has been a
+  no-op since PyG 2.1 and silently turns max-aggregation into sum. See above; this is the
+  whole of the vdW divergence.
 - **pymol is a real dependency**, not just the unused import at `predict.py:12` — protonate.py
   uses it. conda-forge ships it as pymol-open-source.
 - Read the ligand from mol2 before sdf: several PDBbind SDFs do not sanitise and their

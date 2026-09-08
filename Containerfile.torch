@@ -1,0 +1,60 @@
+# PIGNet2 on a current stack, with the pin removed rather than moved.
+#
+# The vdW term was wrong on anything newer than torch_geometric 2.0.3 — -3.518 against the
+# authors' committed -2.074, with the other four energies exact — and that was blamed first on
+# PyG's MessagePassing rewrite and then, after a unit-level probe cleared GatedGAT, on rdkit.
+# Neither was the answer. `InteractionNet` called `super().__init__(**kwargs)` without `aggr`
+# and set `self.aggr = "max"` afterwards; PyG 2.1 moved aggregation into a module built during
+# `__init__`, so the layer reported max and summed. The Morse vdW term is the only energy that
+# reads node embeddings, which is why nothing else moved and why the fault looked environmental.
+#
+# With that fixed in the source, every tier reproduces case1.txt and there is nothing left to
+# pin: no PyG ceiling, and no torch-scatter, which PyG dropped as a hard dependency in 2.4.
+FROM docker.io/mambaorg/micromamba:1.5.8
+
+USER root
+ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
+
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+        # 3.10, not the README's 3.9: dimorphite-dl publishes nothing for 3.9
+        python=3.10 pymol-open-source openbabel libstdcxx-ng \
+        # protonate_pdb shells out to `reduce`; without it every complex dies on a
+        # FileNotFoundError deep inside preprocessing. bioconda, not conda-forge.
+        reduce \
+    && micromamba clean --all --yes
+ENV PATH=/opt/conda/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/conda/lib
+
+# cu124 covers sm_86 (cluster) and sm_89 (local)
+RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+
+# No version bound, and no torch-scatter or torch-sparse: from 2.4 PyG uses torch's own
+# scatter_reduce, so the compiled extensions — the ones pinned to an exact torch ABI and
+# served from an index that answers 403 for combinations it never built — are simply gone.
+RUN pip install --no-cache-dir torch_geometric
+
+RUN pip install --no-cache-dir \
+    rdkit \
+    biopython \
+    "hydra-core>=1.2" \
+    "omegaconf>=2.2" \
+    "numpy<2" \
+    scipy \
+    pandas \
+    scikit-learn \
+    tqdm \
+    # pinned: current releases dropped the DimorphiteDL class protonate.py calls, so
+    # protonation silently would not happen and the hydrogen-bond term would read -0.743
+    # instead of -1.021. 1.2.5 is the last with that API and the first supporting 3.10.
+    "dimorphite-dl==1.2.5"
+
+# the flat imports predict.py expects — generate_data.py was moved out of src/exe/ without
+# the import following it
+ENV PYTHONPATH=/work:/work/src:/work/src/exe:/work/dataset/preprocess
+
+RUN python -c "import torch, torch_geometric, rdkit, pymol, Bio, omegaconf; \
+import importlib.util as u; assert u.find_spec('torch_scatter') is None, 'torch_scatter crept back in'; \
+print('env ok', torch.__version__, torch_geometric.__version__, rdkit.__version__)"
+
+WORKDIR /work
+COPY . /work

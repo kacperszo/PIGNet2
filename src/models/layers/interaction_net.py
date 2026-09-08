@@ -13,7 +13,21 @@ class InteractionNet(MessagePassing):
         aggr: str = "max",
         **kwargs
     ):
-        super().__init__(**kwargs)
+        # `aggr` goes to super(), not just onto self. Until torch_geometric 2.1 the
+        # aggregation was read off `self.aggr` when `aggregate` ran, so assigning it after
+        # super() worked. 2.1 moved aggregation into an `aggr_module` built during
+        # `__init__`, and a later assignment to `self.aggr` no longer reaches it: this layer
+        # kept reporting `self.aggr == "max"` while summing.
+        #
+        # That is the whole of the vdW divergence. Three messages of 1, 5, 3 aggregate to 5
+        # on 2.0.3 and to 9 on 2.3.1, which changes the node embeddings — and the Morse vdW
+        # term is the only energy that reads them, so the other four matched exactly and the
+        # fault looked like it had to be somewhere else. Passing it here behaves identically
+        # on 2.0.3, so one source tree serves both tiers.
+                # "add", not "sum": torch_geometric 2.0.3 asserts the name is one of
+        # add/mean/max/None and rejects "sum" outright, while every later release takes
+        # "add" as the alias for SumAggregation. One spelling that both accept.
+        super().__init__(aggr="add" if aggr == "sum" else aggr, **kwargs)
         self.W1 = Linear(node_features, node_features)
         self.W2 = Linear(node_features, node_features)
         # GRUCell(input_size, hidden_size) -> hidden_size

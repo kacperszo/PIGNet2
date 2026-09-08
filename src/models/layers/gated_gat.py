@@ -15,7 +15,14 @@ class GatedGAT(MessagePassing):
         aggr: str = "sum",
         **kwargs
     ):
-        super().__init__(**kwargs)
+        # Same reason as InteractionNet: from torch_geometric 2.1 the aggregation is fixed
+        # when `aggregate` is built, not read off `self.aggr` when it runs. This layer's
+        # default is "sum", which is also PyG's, so nothing moved here — but it would the
+        # moment anyone constructed it with anything else.
+                # "add", not "sum": torch_geometric 2.0.3 asserts the name is one of
+        # add/mean/max/None and rejects "sum" outright, while every later release takes
+        # "add" as the alias for SumAggregation. One spelling that both accept.
+        super().__init__(aggr="add" if aggr == "sum" else aggr, **kwargs)
         self.W1 = Linear(in_features, out_features)
         self.W2 = Parameter(torch.zeros(out_features, out_features))
         if in_features == -1:
