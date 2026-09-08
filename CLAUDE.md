@@ -39,7 +39,8 @@ never touched `InteractionNet`.
 Passing `aggr` to `super()` fixes it, spelled `"add"` rather than `"sum"` because 2.0.3 asserts
 the name is one of add/mean/max/None while later releases take "add" as the alias. Every tier
 now reproduces `case1.txt`, and **the PyG pin is gone**: `Containerfile.torch` runs torch 2.5.1
-with an unpinned torch_geometric and no torch-scatter at all.
+with torch_geometric 2.8 unpinned and no torch-scatter at all. `gnnb verify pignet2.torch`
+comes back **285/285 at max|Δ| = 0**: bit-exact, not merely close.
 
 The experiment that settled it is worth keeping as a pattern: build the image that *works*,
 change exactly one package on top of it, and rerun. The two earlier attempts compared images
