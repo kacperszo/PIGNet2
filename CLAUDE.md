@@ -119,6 +119,17 @@ the rewrite.
 - **`aggr` must reach `MessagePassing.__init__`.** Setting `self.aggr` afterwards has been a
   no-op since PyG 2.1 and silently turns max-aggregation into sum. See above; this is the
   whole of the vdW divergence.
+- **The `rdkit-pypi==2022.3.5` pin in `Containerfile.authors` does not take.** That image has
+  *both* `rdkit-pypi 2022.3.5` and `rdkit 2025.9.6` installed — the two distributions share the
+  `rdkit` package directory and the later install wins, so `import rdkit` gets 2025.9.6. The
+  reference image has never run the version its own file claims to pin. Left as it is on
+  purpose: it reproduces the golden exactly with what it actually resolves, and pinning it for
+  real would change the reference environment rather than document it. Check `pip list`, not
+  the Containerfile, before believing any version claim about that image.
+- **`pignet2-ref` bakes a pre-fix copy of the source.** The `aggr` fix was verified inside it
+  by mounting the repo over `/work`, and `verify` still passes on the baked copy, but the two
+  tiers are running slightly different code until it is rebuilt. Rebuild via a candidate tag
+  and a full `verify` before retagging — never over a working reference image.
 - **pymol is a real dependency**, not just the unused import at `predict.py:12` — protonate.py
   uses it. conda-forge ships it as pymol-open-source.
 - Read the ligand from mol2 before sdf: several PDBbind SDFs do not sanitise and their

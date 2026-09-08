@@ -47,6 +47,12 @@ RUN pip install --no-cache-dir \
     && pip install --no-cache-dir "torch-geometric==2.0.3"
 
 RUN pip install --no-cache-dir \
+    # NOTE: this pin does not take. Something else pulls in the modern `rdkit`
+    # distribution, the two share a package directory, and the later install wins —
+    # `pip list` in the built image shows rdkit 2025.9.6 beside rdkit-pypi 2022.3.5,
+    # and `import rdkit` gets the former. Left alone deliberately: the image
+    # reproduces the golden with what it actually resolves, so pinning it for real
+    # would change the reference environment rather than describe it.
     "rdkit-pypi==2022.3.5" \
     "dimorphite-dl==1.2.5" \
     "biopython==1.79" \
