@@ -1,3 +1,39 @@
+<!-- gnn-benchmark:begin -->
+# Running this in gnn-benchmark
+
+Two tiers off one source tree, both exact. **Use `pignet2.torch`**: the torch_geometric ceiling
+that forced the 2.0.3 pin is gone, so it runs torch 2.5.1+cu124 with PyG 2.8 unpinned and no
+torch-scatter at all.
+
+| variant | stack | `gnnb verify` on CASF-2016 |
+|---|---|---|
+| `pignet2.reference` | torch 2.1.2, PyG 2.0.3 | 285/285, max abs diff 0 |
+| `pignet2.torch` | torch 2.5.1+cu124, PyG 2.8 | 285/285, **max abs diff 0** |
+
+The vdW term used to read -3.518 against the authors' committed -2.074 on anything newer than
+PyG 2.0.3, with the other four energies exact. That was a one-line bug here, not the framework:
+`InteractionNet` never passed `aggr` to `MessagePassing.__init__`, and from PyG 2.1 the later
+assignment to `self.aggr` no longer reaches the aggregation — the layer reported max and summed.
+
+```bash
+podman build --format=docker -f Containerfile.torch -t pignet2-torch:latest .
+
+gnnb verify --variant pignet2.torch --dataset data/CASF-2016/coreset
+gnnb run --variant pignet2.torch --capability predict --dataset <complexes> --gpu
+gnnb run --variant pignet2.torch --capability embed   --dataset <complexes>
+```
+
+The model is physics-informed, so the head is an energy function rather than an MLP: `predict`
+is the sum of the four terms and `embed` is the terms themselves, with a pooled node
+representation written beside them because four dimensions is very little to transfer.
+
+The pins that matter, the dimorphite shim, and the `rdkit-pypi` pin that silently never took
+are all in [CLAUDE.md](CLAUDE.md).
+
+<!-- gnn-benchmark:end -->
+
+---
+
 # PIGNet2: A versatile deep learning-based protein-ligand interaction prediction model for accurate binding affinity scoring and virtual screening
 This repository is the official implementation of [PIGNet2: A versatile deep learning-based protein-ligand interaction prediction model for accurate binding affinity scoring and virtual screening](https://arxiv.org/abs/2307.01066).
 
