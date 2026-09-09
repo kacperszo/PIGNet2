@@ -74,8 +74,18 @@ def load_model(path: str, device: str):
     """
     import utils  # local import: needs sys.path set above
 
-    checkpoint = torch.load(path, map_location=device, weights_only=False)
-    config = utils.merge_configs(checkpoint["config"], {})
+    # Ours first. `train_complexes.py` writes the config as a yaml *string* beside plain
+    # tensors, so its checkpoints open under the strict loader — the authors' do not, and that
+    # asymmetry is worth keeping rather than levelling down to their format.
+    try:
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
+    except Exception:
+        checkpoint = torch.load(path, map_location=device, weights_only=False)
+
+    if "config_yaml" in checkpoint:
+        config = utils.merge_configs(OmegaConf.create(checkpoint["config_yaml"]), {})
+    else:
+        config = utils.merge_configs(checkpoint["config"], {})
     model = utils.initialize_state(device, checkpoint, config)[0]
     model.eval()
     return model, config

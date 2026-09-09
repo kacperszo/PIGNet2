@@ -26,9 +26,12 @@ warnings.filterwarnings("ignore")
 
 import utils  # noqa: E402
 
+from transfer import HEAD_PREFIXES, is_head  # noqa: E402
+
 CHECKPOINT = "/ckpt/pda_0.pt"
-HEAD = ["nn_vdw_epsilon", "nn_vdw_width", "nn_vdw_radius", "nn_dvdw",
-        "hbond_coeff", "hydrophobic_coeff", "metal_ligand_coeff", "ionic_coeff", "rotor_coeff"]
+# Read from transfer.py rather than restated, so the boundary this test checks and the boundary
+# the trainer transfers on cannot drift apart — which is the failure the test exists to catch.
+HEAD = list(HEAD_PREFIXES)
 
 
 def build():
@@ -42,8 +45,8 @@ def build():
 def main() -> None:
     fresh, trained, config = build()
 
-    encoder = {k: v for k, v in trained.items() if k.split(".")[0] not in HEAD}
-    head = {k: v for k, v in trained.items() if k.split(".")[0] in HEAD}
+    encoder = {k: v for k, v in trained.items() if not is_head(k)}
+    head = {k: v for k, v in trained.items() if is_head(k)}
     e = sum(v.numel() for v in encoder.values())
     h = sum(v.numel() for v in head.values())
     print("split: encoder {} tensors / {:,} params ({:.0f}%) | head {} / {:,}".format(
@@ -53,7 +56,7 @@ def main() -> None:
     model = utils.initialize_state("cpu", {"model_state_dict": {}}, config)[0] \
         if False else build()[0]
     for name, param in model.named_parameters():
-        if name.split(".")[0] not in HEAD:
+        if not is_head(name):
             nn.init.normal_(param, std=0.5) if param.dim() > 0 else None
 
     # Overlay, not a partial load: PyG's lazy Linear raises KeyError from its load hook when
@@ -100,7 +103,7 @@ def main() -> None:
     model.zero_grad()
     new_head.zero_grad()
     out.sum().backward()
-    enc_params = [p for n, p in model.named_parameters() if n.split(".")[0] not in HEAD]
+    enc_params = [p for n, p in model.named_parameters() if not is_head(n)]
     got = [p for p in enc_params if p.grad is not None and p.grad.abs().sum() > 0]
     print("4. gradients flow : {}/{} encoder tensors received a non-zero gradient".format(
         len(got), len(enc_params)))
